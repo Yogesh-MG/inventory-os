@@ -21,7 +21,7 @@ import {
   CheckCircle,
   AlertCircle,
 } from 'lucide-react';
-import './BarcodeScanner.css';
+import '/src/components/BarcodeScanner.css';
 
 export interface Product {
   id: number;

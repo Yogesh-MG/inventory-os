@@ -44,7 +44,7 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <Routes>
-            <Route path="/product" element={<Welcome />} />
+            <Route path="/" element={<Welcome />} />
             <Route path="/dashboard" element={
               <Layout>
                 <Dashboard />
@@ -55,7 +55,7 @@ const App = () => (
                 <Products />
               </Layout>
             } />
-            <Route path="/" element={
+            <Route path="/scanner" element={
               <Layout>
                 <BarcodeScanner />
               </Layout>
