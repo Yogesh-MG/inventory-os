@@ -1,6 +1,6 @@
 clone the repo 
 ```bash
-git clone
+git clone https://github.com/Yogesh-MG/inventory-os.git
 ```
 
 ```bash
