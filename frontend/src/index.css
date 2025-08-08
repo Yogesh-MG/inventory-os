@@ -1,0 +1,123 @@
+/* index.css */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Professional inventory management design system inspired by Zoho CRM */
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 217 19% 27%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 217 19% 27%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 217 19% 27%;
+
+    /* Primary brand colors - Professional blue palette */
+    --primary: 220 91% 55%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 220 91% 45%;
+    --primary-light: 220 91% 65%;
+
+    /* Secondary colors for subtle elements */
+    --secondary: 220 13% 96%;
+    --secondary-foreground: 217 19% 27%;
+
+    /* Muted colors for backgrounds and subtle text */
+    --muted: 220 13% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    /* Accent colors for highlights and CTAs */
+    --accent: 220 13% 96%;
+    --accent-foreground: 217 19% 27%;
+
+    /* Success, warning, and error states */
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 43 96% 56%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Border and input styling */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 220 91% 55%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 217 19% 9%;
+    --foreground: 217 19% 95%;
+
+    --card: 217 19% 12%;
+    --card-foreground: 217 19% 95%;
+
+    --popover: 217 19% 12%;
+    --popover-foreground: 217 19% 95%;
+
+    --primary: 220 91% 55%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 220 91% 45%;
+    --primary-light: 220 91% 65%;
+
+    --secondary: 217 19% 15%;
+    --secondary-foreground: 217 19% 95%;
+
+    --muted: 217 19% 15%;
+    --muted-foreground: 217 19% 65%;
+
+    --accent: 217 19% 15%;
+    --accent-foreground: 217 19% 95%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 0 0% 100%;
+    --warning: 43 96% 56%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 217 19% 20%;
+    --input: 217 19% 20%;
+    --ring: 220 91% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
