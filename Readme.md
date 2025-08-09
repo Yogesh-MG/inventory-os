@@ -20,6 +20,15 @@ npm run build
 npx cap sync android
 ```
 
+### or run the folling it will do the above execution
+```bash
+./app.sh
+```
+### remove this from the <h5>android:usesCleartextTraffic="true"</h5> in production
+```bash
+app>android>app>src>main>AndroidManifest.xml
+```
+
 <p>the app.apk is in the below folder</p>
 
 ```bash
@@ -27,7 +36,6 @@ app>android>app>build>outputs>apk>debug>app-debug.apk
 ```
 
 ## For the Webapp view
-
 
 ```bash
 cd frontend
@@ -44,4 +52,6 @@ npm run build
 ```bash
 npm run preview
 ```
+
+## For the Backend 
 
