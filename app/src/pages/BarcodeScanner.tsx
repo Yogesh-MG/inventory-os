@@ -3,7 +3,7 @@ import { CameraPreview, CameraPreviewOptions } from '@capacitor-community/camera
 import { BarcodeScanner as MLKitBarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning';
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
-import { useInventory } from '@/contexts/InventoryContext';
+import api from '@/utils/api';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +23,10 @@ import {
   Minus,
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
+import axios from 'axios';
 import '/src/components/BarcodeScanner.css';
 
 export interface Product {
@@ -44,17 +47,63 @@ interface ScannedProductData {
   product: Product;
   action: 'restock' | 'reduce';
   quantity: number;
+  geminiSummary?: string;
+  geminiFeedback?: string;
 }
 
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY; // Add to .env: VITE_GEMINI_API_KEY=your_key_here
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+
 export default function BarcodeScannerComponent() {
-  const { getProductByBarcode, updateProductQuantity } = useInventory();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const [isScanning, setIsScanning] = useState(false);
   const [scannedProduct, setScannedProduct] = useState<ScannedProductData | null>(null);
   const [manualBarcode, setManualBarcode] = useState('');
   const [recentScans, setRecentScans] = useState<string[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [updatingInventory, setUpdatingInventory] = useState(false);
   const cameraPreviewRef = useRef<HTMLDivElement>(null);
+
+  // Fetch products on mount
+  useEffect(() => {
+    const fetchProducts = async () => {
+      setLoadingProducts(true);
+      setError(null);
+      try {
+        const res = await api.get('api/products/');
+        const mappedProducts: Product[] = (res.data.results || res.data || []).map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          sku: p.sku,
+          barcode: p.barcode || '',
+          quantity: parseInt(p.quantity),
+          price: parseFloat(p.price),
+          category: p.category_name || p.category || '',
+          minStock: parseInt(p.min_stock),
+          description: p.description || '',
+          createdAt: p.created_at,
+          updatedAt: p.updated_at,
+        }));
+        setProducts(mappedProducts);
+      } catch (err: any) {
+        console.error('API Response:', err);
+        setError('Failed to fetch products');
+        toast({
+          title: 'Error',
+          description: 'Failed to load products for scanning.',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoadingProducts(false);
+      }
+    };
+
+    fetchProducts();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -64,12 +113,42 @@ export default function BarcodeScannerComponent() {
     };
   }, [isScanning]);
 
+  const getProductByBarcode = (barcode: string): Product | undefined => {
+    return products.find(p => p.barcode === barcode);
+  };
+
+  const updateProductQuantity = async (productId: number, newQuantity: number) => {
+    try {
+      setUpdatingInventory(true);
+      const res = await api.patch(`api/products/${productId}/`, { quantity: newQuantity });
+      const updatedProduct: Product = {
+        ...products.find(p => p.id === productId)!,
+        quantity: newQuantity,
+        updatedAt: res.data.updated_at,
+      };
+      setProducts(prev => prev.map(p => p.id === productId ? updatedProduct : p));
+    } catch (err: any) {
+      console.error('API Response:', err);
+      throw new Error('Failed to update quantity');
+    } finally {
+      setUpdatingInventory(false);
+    }
+  };
+
   const startScanning = async () => {
     if (!Capacitor.isNativePlatform()) {
       toast({
         title: 'Platform Not Supported',
         description: 'Barcode scanning is only available on native iOS and Android devices.',
         variant: 'destructive',
+      });
+      return;
+    }
+
+    if (loadingProducts) {
+      toast({
+        title: 'Loading',
+        description: 'Please wait for products to load.',
       });
       return;
     }
@@ -130,7 +209,6 @@ export default function BarcodeScannerComponent() {
         }
       });
 
-
       setIsScanning(true);
       toast({
         title: 'Scanner Started',
@@ -166,36 +244,83 @@ export default function BarcodeScannerComponent() {
     }
   };
 
+  const analyzeWithGemini = async (product: Product) => {
+    if (!GEMINI_API_KEY) {
+      throw new Error('Gemini API key not configured');
+    }
+
+    setAnalyzing(true);
+    try {
+      const prompt = `
+        Analyze this product inventory data:
+        - Product Name: ${product.name}
+        - Current Stock: ${product.quantity}
+        - Minimum Stock Level: ${product.minStock}
+        - Price: $${product.price}
+        - Category: ${product.category}
+        - SKU: ${product.sku}
+
+        Provide:
+        1. A brief summary of the current stock status.
+        2. Actionable feedback (e.g., restock recommendation, if low stock).
+        3. Keep response concise (under 150 words).
+
+        Format as:
+        Summary: [brief summary]
+        Feedback: [actionable advice]
+      `;
+
+      const response = await axios.post(GEMINI_API_URL, {
+        contents: [{ parts: [{ text: prompt }] }],
+      }, {
+        params: { key: GEMINI_API_KEY },
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const geminiText = response.data.candidates[0].content.parts[0].text;
+      const [summary, feedback] = geminiText.split('Feedback:');
+      return {
+        geminiSummary: summary.replace('Summary: ', '').trim(),
+        geminiFeedback: feedback ? feedback.trim() : '',
+      };
+    } catch (geminiError) {
+      console.error('Gemini API Error:', geminiError);
+      throw new Error('Failed to analyze with AI. Please try again.');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   const handleScanSuccess = async (barcode: string) => {
     try {
-      const product = await getProductByBarcode(barcode);
-      if (
-        product &&
-        typeof product.minStock !== 'undefined' &&
-        typeof product.createdAt !== 'undefined' &&
-        typeof product.updatedAt !== 'undefined'
-      ) {
-        setScannedProduct({
-          product: {
-            id: product.id,
-            name: product.name,
-            sku: product.sku,
-            barcode: product.barcode,
-            quantity: product.quantity,
-            price: product.price,
-            category: product.category,
-            minStock: product.minStock,
-            description: product.description,
-            createdAt: product.createdAt,
-            updatedAt: product.updatedAt,
-          },
-          action: 'restock',
-          quantity: 1,
-        });
+      const product = getProductByBarcode(barcode);
+      if (product) {
+        // Analyze with Gemini
+        try {
+          const { geminiSummary, geminiFeedback } = await analyzeWithGemini(product);
+          setScannedProduct({
+            product,
+            action: 'restock',
+            quantity: 1,
+            geminiSummary,
+            geminiFeedback,
+          });
+        } catch (aiError) {
+          toast({
+            title: 'AI Analysis Failed',
+            description: 'Product found but AI analysis unavailable. Proceeding without it.',
+          });
+          setScannedProduct({
+            product,
+            action: 'restock',
+            quantity: 1,
+          });
+        }
+
         setRecentScans((prev) => [barcode, ...prev.slice(0, 4)]);
         toast({
           title: 'Product Found!',
-          description: `Scanned ${product.name} (Barcode: ${barcode})`,
+          description: `Scanned ${product.name} (Barcode: ${barcode}). AI analysis complete.`,
         });
         await stopScanning();
       } else {
@@ -233,12 +358,13 @@ export default function BarcodeScannerComponent() {
     if (!scannedProduct) return;
 
     try {
+      setUpdatingInventory(true);
       const { product, action, quantity } = scannedProduct;
       const newQuantity = action === 'restock'
         ? product.quantity + quantity
         : Math.max(0, product.quantity - quantity);
 
-      await updateProductQuantity(String(product.id), newQuantity);
+      await updateProductQuantity(product.id, newQuantity);
 
       toast({
         title: 'Inventory Updated',
@@ -253,6 +379,8 @@ export default function BarcodeScannerComponent() {
         description: 'Failed to update inventory. Please try again.',
         variant: 'destructive',
       });
+    } finally {
+      setUpdatingInventory(false);
     }
   };
 
@@ -274,12 +402,29 @@ export default function BarcodeScannerComponent() {
     }
   };
 
+  if (loadingProducts) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-2">
+        <p className="text-destructive text-center">{error}</p>
+        <Button onClick={() => window.location.reload()}>Retry</Button>
+      </div>
+    );
+  }
+
   return (
     <div className="barcode-scanner-container space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Barcode Scanner</h1>
         <p className="text-muted-foreground">
-          Scan product barcodes to quickly update inventory
+          Scan product barcodes to quickly update inventory with AI-powered insights
         </p>
       </div>
 
@@ -292,12 +437,12 @@ export default function BarcodeScannerComponent() {
             </CardTitle>
             <div className="relative w-full max-w-md mx-auto">
               <div
-                  id="camera-preview"
-                  ref={cameraPreviewRef}
-                  className={`w-full h-[300px] relative bg-black rounded-lg overflow-hidden ${
-                    !isScanning ? 'hidden' : 'block'
-                  } camera-preview`}
-                ></div>
+                id="camera-preview"
+                ref={cameraPreviewRef}
+                className={`w-full h-[300px] relative bg-black rounded-lg overflow-hidden ${
+                  !isScanning ? 'hidden' : 'block'
+                } camera-preview`}
+              ></div>
               {isScanning && (
                 <div className="scanner-overlay">
                   <div className="center-line"></div>
@@ -336,7 +481,6 @@ export default function BarcodeScannerComponent() {
                 </Button>
               </div>
             ) : null}
-            
           </CardContent>
         </Card>
 
@@ -407,6 +551,16 @@ export default function BarcodeScannerComponent() {
                   <p>Price: ${scannedProduct.product.price.toFixed(2)}</p>
                 </div>
               </div>
+
+              {/* AI Analysis Section */}
+              {scannedProduct.geminiSummary && (
+                <div className="bg-secondary p-4 rounded-lg">
+                  <h4 className="font-medium mb-2 text-sm">AI Summary</h4>
+                  <p className="text-sm text-muted-foreground">{scannedProduct.geminiSummary}</p>
+                  <h4 className="font-medium mt-3 mb-2 text-sm">AI Feedback</h4>
+                  <p className="text-sm text-muted-foreground">{scannedProduct.geminiFeedback}</p>
+                </div>
+              )}
 
               <div>
                 <label className="text-sm font-medium mb-3 block">Action</label>
@@ -492,7 +646,8 @@ export default function BarcodeScannerComponent() {
                 >
                   Cancel
                 </Button>
-                <Button onClick={handleUpdateInventory} className="flex-1">
+                <Button onClick={handleUpdateInventory} className="flex-1" disabled={updatingInventory || analyzing}>
+                  {updatingInventory ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Update Inventory
                 </Button>
               </div>
@@ -531,9 +686,9 @@ export default function BarcodeScannerComponent() {
               <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center mx-auto">
                 <Package className="h-6 w-6 text-primary" />
               </div>
-              <h3 className="font-medium">3. Update Stock</h3>
+              <h3 className="font-medium">3. Get AI Insights</h3>
               <p className="text-sm text-muted-foreground">
-                Choose to restock or reduce quantity and confirm
+                Receive AI-powered summary and feedback after scanning
               </p>
             </div>
           </div>

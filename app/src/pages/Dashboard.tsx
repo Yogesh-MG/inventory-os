@@ -1,14 +1,9 @@
-import { useInventory } from '@/contexts/InventoryContext';
+// src/pages/Dashboard.tsx
+import { useState, useEffect } from 'react';
+import { Product, Order, Customer } from '@/types/dashboard'; // Import shared types for these
+import api from '@/utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { 
-  Package, 
-  DollarSign, 
-  AlertTriangle, 
-  TrendingUp,
-  ShoppingCart,
-  Users,
-} from 'lucide-react';
 import {
   ChartContainer,
   ChartTooltip,
@@ -24,12 +19,113 @@ import {
   Pie,
   Cell,
 } from 'recharts';
+import { 
+  Package, 
+  DollarSign, 
+  AlertTriangle, 
+  TrendingUp,
+  ShoppingCart,
+  Users,
+  Loader2,
+} from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
 
 export default function Dashboard() {
-  const { state, getLowStockProducts, getTotalValue } = useInventory();
-  const { products, orders, customers } = state;
+  // Local state for data
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  // Fetch data on mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [productsRes, ordersRes, customersRes] = await Promise.all([
+          api.get('api/products/'),
+          api.get('api/orders/'),
+          api.get('api/customers/'),
+        ]);
+
+        // Map responses safely
+        const mappedProducts: Product[] = (productsRes.data.results || productsRes.data || []).map((p: any) => ({
+          id: p.id.toString(),
+          name: p.name,
+          sku: p.sku,
+          quantity: parseInt(p.quantity),
+          price: parseFloat(p.price),
+          minStock: parseInt(p.min_stock),
+          category: p.category_name || p.category || '',
+        }));
+        const mappedOrders: Order[] = (ordersRes.data.results || ordersRes.data || []).map((o: any) => ({
+          id: o.id.toString(),
+          type: o.type,
+          customerId: o.customer.toString(),
+          status: o.status,
+          total: parseFloat(o.total),
+          createdAt: o.created_at,
+        }));
+        const mappedCustomers: Customer[] = (customersRes.data.results || customersRes.data || []).map((c: any) => ({
+          id: c.id.toString(),
+          name: c.name,
+        }));
+
+        setProducts(mappedProducts);
+        setOrders(mappedOrders);
+        setCustomers(mappedCustomers);
+      } catch (err: any) {
+        console.error('API Response:', err);
+        setError('Failed to fetch dashboard data');
+        toast({
+          title: 'Error',
+          description: 'Failed to load dashboard data.',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Local helper functions
+  const getLowStockProducts = () => {
+    return products.filter(p => p.quantity <= p.minStock);
+  };
+
+  const getTotalValue = () => {
+    return products.reduce((total, product) => total + (product.quantity * product.price), 0);
+  };
+
+  const getCustomerName = (customerId: string) => {
+    const customer = customers.find(c => c.id === customerId);
+    return customer?.name || 'Unknown Customer';
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-2">
+        <p className="text-destructive text-center">{error}</p>
+        <Button onClick={() => window.location.reload()}>Retry</Button>
+      </div>
+    );
+  }
 
   const lowStockProducts = getLowStockProducts();
   const totalValue = getTotalValue();
@@ -54,7 +150,7 @@ export default function Dashboard() {
   }, []);
 
   const stockLevelData = products.map(product => ({
-    name: product.name,
+    name: product.name.substring(0, 20) + (product.name.length > 20 ? '...' : ''), // Truncate for chart
     stock: product.quantity,
     minStock: product.minStock,
   })).slice(0, 6); // Show top 6 products
@@ -62,11 +158,6 @@ export default function Dashboard() {
   const recentOrders = orders
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
-
-  const getCustomerName = (customerId: string) => {
-    const customer = customers.find(c => c.id === customerId);
-    return customer?.name || 'Unknown Customer';
-  };
 
   const chartConfig = {
     stock: {
@@ -80,7 +171,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
         <p className="text-muted-foreground">
@@ -194,7 +285,6 @@ export default function Dashboard() {
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="count"
-                    label={({ category, count }) => `${category}: ${count}`}
                   >
                     {categoryData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -276,10 +366,9 @@ export default function Dashboard() {
                       <p className="font-medium">${order.total.toFixed(2)}</p>
                       <Badge 
                         variant={
-                          order.status === 'confirmed' ? 'default' :
+                          order.status === 'confirmed' || order.status === 'shipped' || order.status === 'delivered' ? 'default' :
                           order.status === 'pending' ? 'secondary' :
-                          order.status === 'shipped' ? 'default' :
-                          order.status === 'delivered' ? 'default' : 'destructive'
+                          'destructive'
                         }
                       >
                         {order.status}

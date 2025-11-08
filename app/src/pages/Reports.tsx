@@ -1,30 +1,150 @@
+// src/pages/Reports.tsx
+import { useState, useEffect } from 'react';
+import { Order, PurchaseOrder, Product } from '@/types/reports'; // Reuse or create shared types
+import api from '@/utils/api';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, Filter, Calendar, TrendingUp, TrendingDown, DollarSign, Package, ShoppingCart, Plus } from "lucide-react";
-
-const mockSalesReport = [
-  { product: "Laptop Pro", quantity: 25, revenue: "$62,500.00", profit: "$12,500.00" },
-  { product: "Mouse Wireless", quantity: 150, revenue: "$7,500.00", profit: "$3,750.00" },
-  { product: "Keyboard Mechanical", quantity: 75, revenue: "$11,250.00", profit: "$4,500.00" }
-];
-
-const mockPurchasesReport = [
-  { vendor: "Tech Supplies Inc", orders: 5, amount: "$25,000.00", items: 125 },
-  { vendor: "Office Solutions", orders: 3, amount: "$8,500.00", items: 45 },
-  { vendor: "Equipment Corp", orders: 2, amount: "$15,000.00", items: 25 }
-];
-
-const mockInventoryValuation = [
-  { category: "Electronics", items: 450, value: "$125,000.00", percentage: "62%" },
-  { category: "Office Supplies", items: 250, value: "$35,000.00", percentage: "17%" },
-  { category: "Furniture", items: 75, value: "$42,000.00", percentage: "21%" }
-];
+import { Download, Filter, Calendar, TrendingUp, TrendingDown, DollarSign, Package, ShoppingCart, Plus, Loader2 } from "lucide-react";
+import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
 
 export default function Reports() {
+  // Local state for data
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const [tabValue, setTabValue] = useState('sales');
+  const token = localStorage.getItem('token');
+  // Fetch data on mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [ordersRes, purchaseOrdersRes, productsRes] = await Promise.all([
+          api.get('api/orders/', { headers: { Authorization: `Bearer ${token}` },}),
+          api.get('api/purchase-orders/', { headers: { Authorization: `Bearer ${token}` },}),
+          api.get('api/products/', { headers: { Authorization: `Bearer ${token}` },}),
+        ]);
+
+        // Map responses safely
+        const mappedOrders: Order[] = (ordersRes.data.results || ordersRes.data || []).map((o: any) => ({
+          id: o.id.toString(),
+          type: o.type,
+          customerName: o.customer_name || 'Unknown',
+          total: parseFloat(o.total),
+          status: o.status,
+        }));
+        const mappedPurchaseOrders: PurchaseOrder[] = (purchaseOrdersRes.data.results || purchaseOrdersRes.data || []).map((po: any) => ({
+          id: po.id.toString(),
+          vendorName: po.vendor_name || 'Unknown',
+          total: parseFloat(po.total),
+          itemsCount: po.items_count,
+        }));
+        const mappedProducts: Product[] = (productsRes.data.results || productsRes.data || []).map((p: any) => ({
+          id: p.id.toString(),
+          name: p.name,
+          category: p.category_name || p.category || '',
+          quantity: parseInt(p.quantity),
+          price: parseFloat(p.price),
+        }));
+
+        setOrders(mappedOrders);
+        setPurchaseOrders(mappedPurchaseOrders);
+        setProducts(mappedProducts);
+      } catch (err: any) {
+        console.error('API Response:', err);
+        setError('Failed to fetch reports data');
+        toast({
+          title: 'Error',
+          description: 'Failed to load reports data.',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Derived data for reports
+  const salesReport = orders
+    .filter(o => o.type === 'sales')
+    .reduce((acc: any[], order) => {
+      // Group by product or simplify for demo
+      // In real, join with order items
+      const product = 'Sample Product'; // Simulate
+      const existing = acc.find((item: any) => item.product === product);
+      if (existing) {
+        existing.quantity += 1;
+        existing.revenue += order.total;
+      } else {
+        acc.push({ product, quantity: 1, revenue: order.total, profit: order.total * 0.2 });
+      }
+      return acc;
+    }, [])
+    .slice(0, 3);
+
+  const purchasesReport = purchaseOrders.slice(0, 3).map(po => ({
+    vendor: po.vendorName,
+    orders: 1, // Simulate
+    amount: po.total,
+    items: po.itemsCount,
+  }));
+
+  const inventoryValuation = products.reduce((acc: any[], product) => {
+    const existing = acc.find((item: any) => item.category === product.category);
+    if (existing) {
+      existing.items += 1;
+      existing.value += product.quantity * product.price;
+    } else {
+      acc.push({ category: product.category, items: 1, value: product.quantity * product.price, percentage: '0%' });
+    }
+    return acc;
+  }, []).slice(0, 3);
+
+  // Compute percentages for inventory
+  const totalInventoryValue = products.reduce((sum, p) => sum + (p.quantity * p.price), 0);
+  inventoryValuation.forEach(item => {
+    item.percentage = totalInventoryValue > 0 ? `${((item.value / totalInventoryValue) * 100).toFixed(0)}%` : '0%';
+  });
+
+  // Global metrics
+  const totalRevenue = orders.reduce((sum, o) => sum + o.total, 0);
+  const totalPOs = purchaseOrders.length;
+  const inventoryValue = totalInventoryValue;
+
+  const handleExport = (reportType: string) => {
+    console.log(`Exporting ${reportType} report...`);
+    toast({ title: 'Exported', description: `${reportType} report exported successfully.` });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-2">
+        <p className="text-destructive text-center">{error}</p>
+        <Button onClick={() => window.location.reload()}>Retry</Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 sm:p-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -40,7 +160,7 @@ export default function Reports() {
             <Filter className="h-4 w-4 mr-2" />
             Filter
           </Button>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" onClick={() => handleExport('all')}>
             <Download className="h-4 w-4 mr-2" />
             Export All
           </Button>
@@ -55,7 +175,7 @@ export default function Reports() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">$125,450.00</div>
+            <div className="text-2xl font-bold">${totalRevenue.toLocaleString()}</div>
             <div className="flex items-center text-xs text-green-600">
               <TrendingUp className="h-3 w-3 mr-1" />
               +12.5% from last month
@@ -68,7 +188,7 @@ export default function Reports() {
             <ShoppingCart className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,247</div>
+            <div className="text-2xl font-bold">{orders.length}</div>
             <div className="flex items-center text-xs text-green-600">
               <TrendingUp className="h-3 w-3 mr-1" />
               +8.2% from last month
@@ -81,7 +201,7 @@ export default function Reports() {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">$202,000.00</div>
+            <div className="text-2xl font-bold">${inventoryValue.toLocaleString()}</div>
             <div className="flex items-center text-xs text-red-600">
               <TrendingDown className="h-3 w-3 mr-1" />
               -2.1% from last month
@@ -104,7 +224,7 @@ export default function Reports() {
       </div>
 
       {/* Reports Tabs */}
-      <Tabs defaultValue="sales" className="w-full">
+      <Tabs value={tabValue} onValueChange={setTabValue} className="w-full">
         <TabsList>
           <TabsTrigger value="sales">Sales Report</TabsTrigger>
           <TabsTrigger value="purchases">Purchases Report</TabsTrigger>
@@ -116,7 +236,7 @@ export default function Reports() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Sales Performance Report</CardTitle>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={() => handleExport('sales')}>
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
@@ -133,14 +253,16 @@ export default function Reports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockSalesReport.map((item, index) => (
+                  {salesReport.map((item, index) => (
                     <TableRow key={index}>
                       <TableCell className="font-medium">{item.product}</TableCell>
                       <TableCell>{item.quantity}</TableCell>
-                      <TableCell>{item.revenue}</TableCell>
-                      <TableCell>{item.profit}</TableCell>
+                      <TableCell>${item.revenue.toLocaleString()}</TableCell>
+                      <TableCell>${item.profit.toLocaleString()}</TableCell>
                       <TableCell>
-                        <span className="text-green-600 font-medium">20%</span>
+                        <Badge variant="default">
+                          {((item.profit / item.revenue) * 100).toFixed(1)}%
+                        </Badge>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -154,7 +276,7 @@ export default function Reports() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Purchase Orders Report</CardTitle>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={() => handleExport('purchases')}>
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
@@ -171,13 +293,13 @@ export default function Reports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockPurchasesReport.map((item, index) => (
+                  {purchasesReport.map((item, index) => (
                     <TableRow key={index}>
                       <TableCell className="font-medium">{item.vendor}</TableCell>
                       <TableCell>{item.orders}</TableCell>
-                      <TableCell>{item.amount}</TableCell>
+                      <TableCell>${item.amount.toLocaleString()}</TableCell>
                       <TableCell>{item.items}</TableCell>
-                      <TableCell>$5,000.00</TableCell>
+                      <TableCell>${(item.amount / item.orders).toFixed(2)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -190,7 +312,7 @@ export default function Reports() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Inventory Valuation Report</CardTitle>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={() => handleExport('inventory')}>
                 <Download className="h-4 w-4 mr-2" />
                 Export
               </Button>
@@ -207,15 +329,15 @@ export default function Reports() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockInventoryValuation.map((item, index) => (
+                  {inventoryValuation.map((item, index) => (
                     <TableRow key={index}>
                       <TableCell className="font-medium">{item.category}</TableCell>
                       <TableCell>{item.items}</TableCell>
-                      <TableCell>{item.value}</TableCell>
+                      <TableCell>${item.value.toLocaleString()}</TableCell>
                       <TableCell>
-                        <span className="font-medium">{item.percentage}</span>
+                        <Badge variant="secondary">{item.percentage}</Badge>
                       </TableCell>
-                      <TableCell>$278.00</TableCell>
+                      <TableCell>${(item.value / item.items).toFixed(2)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

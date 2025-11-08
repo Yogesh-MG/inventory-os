@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Bell, Search, User, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,15 +10,38 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { useInventory } from '@/contexts/InventoryContext';
+import api from '@/utils/api';
 
 interface HeaderProps {
   onMobileMenuClick: () => void;
 }
 
 export function Header({ onMobileMenuClick }: HeaderProps) {
-  const { getLowStockProducts } = useInventory();
-  const lowStockCount = getLowStockProducts().length;
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch low stock count on mount (lightweight - only products needed)
+  useEffect(() => {
+    const fetchLowStock = async () => {
+      setLoading(true);
+      try {
+        const res = await api.get('api/products/');
+        const products = (res.data.results || res.data || []).map((p: any) => ({
+          quantity: parseInt(p.quantity),
+          minStock: parseInt(p.min_stock),
+        }));
+        const count = products.filter((p: any) => p.quantity <= p.minStock).length;
+        setLowStockCount(count);
+      } catch (err: any) {
+        console.error('Failed to fetch low stock:', err);
+        // Don't set error - header shouldn't break the app
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLowStock();
+  }, []);
 
   return (
     <header className="h-16 bg-background border-b border-border flex items-center justify-between px-6">
@@ -48,9 +72,9 @@ export function Header({ onMobileMenuClick }: HeaderProps) {
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative">
+            <Button variant="ghost" size="icon" className="relative" disabled={loading}>
               <Bell className="h-5 w-5" />
-              {lowStockCount > 0 && (
+              {lowStockCount > 0 && !loading && (
                 <Badge 
                   variant="destructive" 
                   className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs"
@@ -73,10 +97,11 @@ export function Header({ onMobileMenuClick }: HeaderProps) {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
               </>
-            ) : null}
-            <DropdownMenuItem className="text-center text-sm text-muted-foreground">
-              No new notifications
-            </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem className="text-center text-sm text-muted-foreground">
+                No new notifications
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 

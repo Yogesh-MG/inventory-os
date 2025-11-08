@@ -1,4 +1,7 @@
-import { useInventory } from '@/contexts/InventoryContext';
+// src/pages/Analytics.tsx
+import { useState, useEffect } from 'react';
+import { Product, Order, Customer } from '@/types/analystics'; // Import shared types for these
+import api from '@/utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -12,13 +15,11 @@ import {
   XAxis,
   YAxis,
   ResponsiveContainer,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   PieChart,
   Pie,
   Cell,
-  AreaChart,
-  Area,
 } from 'recharts';
 import { 
   TrendingUp, 
@@ -27,13 +28,99 @@ import {
   Package,
   ShoppingCart,
   AlertTriangle,
+  Loader2,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
 export default function Analytics() {
-  const { state, getLowStockProducts, getTotalValue } = useInventory();
-  const { products, orders, customers } = state;
+  // Local state for data
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+  const token = localStorage.getItem('token');
+  
+  // Fetch data on mount
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [productsRes, ordersRes, customersRes] = await Promise.all([
+          api.get('api/products/', { headers: { Authorization: `Bearer ${token}` },}),
+          api.get('api/orders/', { headers: { Authorization: `Bearer ${token}` },}),
+          api.get('api/customers/', { headers: { Authorization: `Bearer ${token}` },}),
+        ]);
+
+        // Map responses safely
+        const mappedProducts: Product[] = (productsRes.data.results || productsRes.data || []).map((p: any) => ({
+          id: p.id.toString(),
+          name: p.name,
+          quantity: parseInt(p.quantity),
+          price: parseFloat(p.price),
+          minStock: parseInt(p.min_stock),
+          category: p.category_name || p.category || '',
+        }));
+        const mappedOrders: Order[] = (ordersRes.data.results || ordersRes.data || []).map((o: any) => ({
+          id: o.id.toString(),
+          type: o.type,
+          status: o.status,
+          total: parseFloat(o.total),
+        }));
+        const mappedCustomers: Customer[] = (customersRes.data.results || customersRes.data || []).map((c: any) => ({
+          id: c.id.toString(),
+          name: c.name,
+        }));
+
+        setProducts(mappedProducts);
+        setOrders(mappedOrders);
+        setCustomers(mappedCustomers);
+      } catch (err: any) {
+        console.error('API Response:', err);
+        setError('Failed to fetch analytics data');
+        toast({
+          title: 'Error',
+          description: 'Failed to load analytics data.',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Local helper functions (replaced from context)
+  const getLowStockProducts = () => {
+    return products.filter(p => p.quantity <= p.minStock);
+  };
+
+  const getTotalValue = () => {
+    return products.reduce((total, product) => total + (product.quantity * product.price), 0);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-2">
+        <p className="text-destructive text-center">{error}</p>
+        <Button onClick={() => window.location.reload()}>Retry</Button>
+      </div>
+    );
+  }
 
   // Calculate analytics data
   const totalProducts = products.length;
@@ -45,7 +132,7 @@ export default function Analytics() {
   const lowStockCount = getLowStockProducts().length;
   const totalValue = getTotalValue();
 
-  // Monthly sales data (simulated)
+  // Monthly sales data (simulated; could fetch real data from backend if available)
   const monthlySales = [
     { month: 'Jan', sales: 12000, orders: 45 },
     { month: 'Feb', sales: 15000, orders: 52 },
@@ -112,7 +199,7 @@ export default function Analytics() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div>
         <h1 className="text-3xl font-bold text-foreground">Analytics</h1>
         <p className="text-muted-foreground">
@@ -181,7 +268,7 @@ export default function Analytics() {
 
       <div className="grid gap-4 md:grid-cols-2">
         {/* Sales Trend */}
-        <Card className="col-span-1">
+        <Card>
           <CardHeader>
             <CardTitle>Sales Trend</CardTitle>
           </CardHeader>
@@ -218,7 +305,7 @@ export default function Analytics() {
         </Card>
 
         {/* Stock Status Distribution */}
-        <Card className="col-span-1">
+        <Card>
           <CardHeader>
             <CardTitle>Stock Status Distribution</CardTitle>
           </CardHeader>
@@ -254,7 +341,7 @@ export default function Analytics() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {categoryAnalysis.map((category, index) => (
+              {categoryAnalysis.map((category) => (
                 <div key={category.category} className="flex items-center justify-between">
                   <div>
                     <p className="font-medium">{category.category}</p>
@@ -265,7 +352,7 @@ export default function Analytics() {
                   <div className="text-right">
                     <p className="font-medium">${category.value.toLocaleString()}</p>
                     <Badge variant="secondary">
-                      {((category.value / totalValue) * 100).toFixed(1)}%
+                      {totalValue > 0 ? ((category.value / totalValue) * 100).toFixed(1) : 0}%
                     </Badge>
                   </div>
                 </div>
