@@ -5,16 +5,19 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
+from decimal import Decimal
 from django.db.models import Sum, Count
 from .models import (
     Category, Product, Customer, Order, Bill,
     PurchaseOrder, WorkflowRule, Alert
 )
+from .gemini_ai_analyser import analyze_inventory
 from .serializers import (
     CategorySerializer, ProductSerializer, CustomerSerializer,
     OrderSerializer, BillSerializer, PurchaseOrderSerializer,
-    WorkflowRuleSerializer, AlertSerializer
+    WorkflowRuleSerializer, AlertSerializer, InventoryReportSerializer
 )
+from rest_framework.decorators import api_view, permission_classes
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
@@ -149,3 +152,49 @@ class AlertViewSet(viewsets.ModelViewSet):
         alert.save()
         serializer = self.get_serializer(alert)
         return Response(serializer.data)
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def generate_inventory_report(request):
+    """
+    Generate AI-powered inventory behavior report using Gemini.
+    """
+    try:
+        # Fetch all products with relevant fields
+        products = Product.objects.values(
+            'id', 'name', 'sku', 'quantity', 'price', 'min_stock', 
+            'category__name'  # Assuming category FK with name
+        )
+        
+        # Convert to list of dicts for Gemini
+        def convert_decimal(obj):
+            if isinstance(obj, Decimal):
+                return float(obj)
+            if isinstance(obj, dict):
+                return {k: convert_decimal(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [convert_decimal(i) for i in obj]
+            return obj
+
+        products_data = convert_decimal(list(products))
+        
+        if not products_data:
+            return Response({"error": "No inventory data available"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Generate report
+        report_data = analyze_inventory(products_data)
+
+        if "error" in report_data:
+            return Response({"error": report_data["error"]}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Serialize/validate
+        print(report_data)
+        return Response(report_data, status=status.HTTP_200_OK)
+        #serializer = InventoryReportSerializer(report_data)
+        if report_data():
+            return Response(report_data)
+        else:
+            return Response({"error": "Invalid report structure"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

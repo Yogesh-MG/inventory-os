@@ -15,4 +15,5 @@ router.register(r'alerts', views.AlertViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('inventory-report/', views.generate_inventory_report, name='inventory-report'),
 ]

@@ -144,3 +144,12 @@ class AlertSerializer(serializers.ModelSerializer):
             'status', 'status_display', 'created_at'
         ]
         read_only_fields = ['id', 'created_at', 'type_display', 'status_display']
+        
+class InventoryReportSerializer(serializers.Serializer):
+    summary = serializers.CharField()  # Overall inventory health
+    low_stock_items = serializers.IntegerField()  # Count of low stock
+    total_value = serializers.FloatField()  # Total inventory value
+    reorder_recommendations = serializers.ListField(child=serializers.DictField())  # List of {product_id, suggested_qty, urgency}
+    trends = serializers.CharField()  # e.g., "Rising demand in electronics"
+    risk_level = serializers.CharField()  # 'low', 'medium', 'high'
+    action_items = serializers.ListField(child=serializers.CharField())  # Quick actions

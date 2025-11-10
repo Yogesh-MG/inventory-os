@@ -27,7 +27,7 @@ SECRET_KEY = config('DJANGO_SECRET_KEY')
 DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1','192.168.1.9']
-
+GEMINI_API_KEY = config('GEMINI_API_KEY')
 
 # Application definition
 
