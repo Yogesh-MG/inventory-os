@@ -414,3 +414,4 @@ export default function Automation() {
     </div>
   );
 }
+console.log("Automation page Loaded")
